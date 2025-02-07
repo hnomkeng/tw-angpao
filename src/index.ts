@@ -1,10 +1,17 @@
-// src/index.ts
-
+// src/index.ts (Modified)
 import { Elysia } from 'elysia'
 import { Type as t } from '@sinclair/typebox'
 import { TypeCompiler } from '@sinclair/typebox/compiler'
 import { createAccelerator } from 'json-accelerator'
 
+// --- Constants ---
+const INVALID_PHONE_NUMBER = 'INVALID_PHONE_NUMBER'
+const INVALID_VOUCHER_CODE = 'INVALID_VOUCHER_CODE'
+const HTTP_ERROR_PREFIX = 'HTTP_ERROR_'
+const INVALID_JSON_RESPONSE = 'INVALID_JSON_RESPONSE'
+const NETWORK_ERROR = 'NETWORK_ERROR'
+
+// --- Types ---
 const shape = t.Object({
 	mobile: t.String(),
 	voucher_hash: t.String()
@@ -57,19 +64,20 @@ interface ApiResponseSuccess {
 }
 
 interface ApiResponseError {
-	statusCode: number
+	// statusCode: number; <--- Remove this.  It's not part of the response.
 	status: {
 		code: string
 		message: string
 		error?: any // Optional error details
 	}
-	data?: null // Explicitly allow null data
+	data?: null // Consistent: always optional, and can be null.
 }
 
 type ApiResponse = ApiResponseSuccess | ApiResponseError
 
+// --- Validation Functions ---
 function getValidVoucherCode(voucherCode: string): string {
-	const parts = (voucherCode + '').split('v=')
+	const parts = voucherCode.split('v=')
 	const codeToTest = parts[1] || parts[0]
 
 	const match = codeToTest.match(/[0-9A-Za-z]+/)
@@ -81,123 +89,168 @@ function isValidThaiPhoneNumber(phoneNumber: string): boolean {
 	return thaiPhoneNumberRegex.test(phoneNumber)
 }
 
+// --- Custom Error Classes ---
+class ValidationError extends Error {
+	code: string
+	constructor(code: string, message: string) {
+		super(message)
+		this.code = code
+		this.name = 'ValidationError'
+	}
+}
+
+class NetworkError extends Error {
+	code: string
+	constructor(code: string, message: string) {
+		super(message)
+		this.code = code
+		this.name = 'NetworkError'
+	}
+}
+
+class ApiError extends Error {
+	code: string
+	constructor(code: string, message: string) {
+		super(message)
+		this.code = code
+		this.name = 'ApiError'
+	}
+}
+class JsonParseError extends Error {
+	code: string
+	constructor(message: string, originalError: any) {
+		super(message)
+		this.code = INVALID_JSON_RESPONSE
+		this.name = 'JsonParseError'
+		this.cause = originalError // Capture original for debug
+	}
+}
+
+// --- API Request Function ---
+async function makeApiRequest(
+	url: string,
+	body: {
+		mobile: string
+		voucher_hash: string
+	}
+): Promise<Response> {
+	const guard = TypeCompiler.Compile(shape)
+	const encode = createAccelerator(shape)
+
+	const response = await fetch(url, {
+		method: 'POST',
+		headers: {
+			'content-type': 'application/json'
+		},
+		body: guard.Check(body) ? encode(body) : JSON.stringify(body)
+	})
+	return response
+}
+
+// --- Response Parse Function ---
+async function parseApiResponse(response: Response): Promise<ApiResponse> {
+	if (!response.ok) {
+		try {
+			const errorData = await response.json()
+			if (errorData && errorData.status && errorData.status.code) {
+				return errorData as ApiResponseError
+			}
+		} catch (parseError) {
+			//ignore since it will throw a new error.
+		}
+		throw new ApiError(
+			`${HTTP_ERROR_PREFIX}${response.status}`,
+			`API request failed: ${response.statusText}`
+		)
+	}
+
+	try {
+		const data: any = await response.json() //Still any, for the guard
+		if (data?.status?.code === 'SUCCESS' && data?.status?.data) {
+			return data as ApiResponseSuccess
+		} else {
+			return data as ApiResponseError
+		}
+	} catch (jsonError) {
+		throw new JsonParseError('API returned invalid JSON', jsonError)
+	}
+}
+
+// --- Main redeemVoucher Function ---
 async function redeemVoucher({
 	phoneNumber,
 	voucherCode
 }: RedeemVoucher): Promise<ApiResponse> {
 	const cleanedPhoneNumber = phoneNumber.trim()
-	if (!isValidThaiPhoneNumber(cleanedPhoneNumber))
-		return {
-			statusCode: 400,
-			status: {
-				code: 'INVALID_PHONE_NUMBER',
-				message: 'Invalid Thai Phone Number.'
-			},
-			data: null
-		}
-
 	const validVoucherCode = getValidVoucherCode(voucherCode)
-	if (!validVoucherCode)
-		return {
-			statusCode: 400,
-			status: {
-				code: 'INVALID_VOUCHER_CODE',
-				message: 'Invalid Voucher Code.'
-			},
-			data: null
-		}
+
+	if (!isValidThaiPhoneNumber(cleanedPhoneNumber)) {
+		throw new ValidationError(
+			INVALID_PHONE_NUMBER,
+			'Invalid Thai Phone Number.'
+		)
+	}
+
+	if (!validVoucherCode) {
+		throw new ValidationError(INVALID_VOUCHER_CODE, 'Invalid Voucher Code.')
+	}
+
+	const url = `https://gift.truemoney.com/campaign/vouchers/${validVoucherCode}/redeem`
+	const body = {
+		mobile: cleanedPhoneNumber,
+		voucher_hash: validVoucherCode
+	} satisfies typeof shape.static
 
 	try {
-		// Make API request to redeem voucher
-		const url = `https://gift.truemoney.com/campaign/vouchers/${validVoucherCode}/redeem`
-
-		const body = {
-			mobile: cleanedPhoneNumber,
-			voucher_hash: validVoucherCode
-		} satisfies typeof shape.static
-
-		const guard = TypeCompiler.Compile(shape)
-		const encode = createAccelerator(shape)
-
-		const response = await fetch(url, {
-			method: 'POST',
-			headers: {
-				'content-type': 'application/json'
-			},
-			body: guard.Check(body) ? encode(body) : JSON.stringify(body)
-		})
-
-		if (!response.ok) {
-			try {
-				const errorData = await response.json()
-				if (errorData && errorData.status && errorData.status.code)
-					return errorData as ApiResponseError
-			} catch (parseError) {
-				return {
-					statusCode: response.status,
-					status: {
-						code: `HTTP_ERROR_${response.status}`,
-						message: `API request failed: ${response.statusText}`
-					},
-					data: null
-				}
-			}
+		const response = await makeApiRequest(url, body)
+		return parseApiResponse(response)
+	} catch (error) {
+		if (error instanceof ValidationError) {
 			return {
-				statusCode: response.status,
+				status: { code: error.code, message: error.message },
+				data: null
+			} // RETURN, don't throw
+		}
+		if (error instanceof NetworkError) {
+			return {
 				status: {
-					code: `HTTP_ERROR_${response.status}`,
-					message: `API request failed: ${response.statusText}`
+					code: error.code,
+					message: error.message,
+					error: error.cause
 				},
 				data: null
-			}
+			} // RETURN
 		}
-
-		try {
-			const data: any = await response.json()
-
-			// Type guard to check
-			if (
-				data &&
-				data.status &&
-				data.status.code === 'SUCCESS' &&
-				data.status.data
-			)
-				return data as ApiResponseSuccess // Cast to the success type
-			else return data as ApiResponseError // Cast to the error type
-		} catch (jsonError) {
+		if (error instanceof ApiError) {
 			return {
-				statusCode: response.status,
+				status: { code: error.code, message: error.message },
+				data: null
+			} // RETURN
+		}
+		if (error instanceof JsonParseError) {
+			return {
 				status: {
-					code: 'INVALID_JSON_RESPONSE',
-					message: 'API returned invalid JSON',
-					error: jsonError
+					code: error.code,
+					message: error.message,
+					error: error.cause
 				},
 				data: null
-			}
+			} // RETURN
 		}
-	} catch (err) {
-		return {
-			statusCode: 500,
-			status: {
-				code: 'NETWORK_ERROR',
-				message: 'Network or API call failed',
-				error: err
-			},
-			data: null
-		}
+		//should not happen, but for safety
+		throw new NetworkError(NETWORK_ERROR, 'Unexpected error') //keep throw for unexpected errors.
 	}
 }
 
-export const TWAngpao = <const Name extends string = 'TWA'>(
-	name = 'TWA' as Name
-) => {
-	return new Elysia().decorate(name as Name extends string ? Name : 'TWA', {
+export const TWAngpao = (name: string = 'TWA') => {
+	return new Elysia().decorate(name, {
 		async redeem(phoneNumber: string, voucherCode: string) {
-			return await redeemVoucher({
+			return redeemVoucher({
 				phoneNumber,
 				voucherCode
-			} as RedeemVoucher)
+			})
 		}
 	})
 }
+
 export default TWAngpao
