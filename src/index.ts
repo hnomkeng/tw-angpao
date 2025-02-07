@@ -66,13 +66,12 @@ interface ApiResponseSuccess {
 }
 
 interface ApiResponseError {
-	// statusCode: number; <--- Remove this.  It's not part of the response.
 	status: {
 		code: string
 		message: string
-		error?: any // Optional error details
+		error?: any
 	}
-	data?: null // Consistent: always optional, and can be null.
+	data?: null
 }
 
 type ApiResponse = ApiResponseSuccess | ApiResponseError
@@ -124,7 +123,7 @@ class JsonParseError extends Error {
 		super(message)
 		this.code = INVALID_JSON_RESPONSE
 		this.name = 'JsonParseError'
-		this.cause = originalError // Capture original for debug
+		this.cause = originalError
 	}
 }
 
@@ -175,7 +174,8 @@ async function parseApiResponse(response: Response): Promise<ApiResponse> {
 
 // --- Cache Setup ---
 const cache = new Map<string, { data: ApiResponse; expiry: number }>()
-const CACHE_TTL = 1000 * 60 * 60 * 24 // 60 seconds (adjust as needed)
+const SUCCESS_CACHE_TTL = 1000 * 60 * 60 * 24 // 60 seconds (adjust as needed)
+const ERROR_CACHE_TTL = 1000 * 60 * 5 // 5 minutes for error responses
 
 // --- Main redeemVoucher Function ---
 async function redeemVoucher({
@@ -185,16 +185,23 @@ async function redeemVoucher({
 	const cleanedPhoneNumber = phoneNumber.trim()
 	const validVoucherCode = getValidVoucherCode(voucherCode)
 
-	if (!isValidThaiPhoneNumber(cleanedPhoneNumber)) {
-		throw new ValidationError(
-			INVALID_PHONE_NUMBER,
-			'Invalid Thai Phone Number.'
-		)
-	}
+	if (!isValidThaiPhoneNumber(cleanedPhoneNumber))
+		return {
+			status: {
+				code: INVALID_PHONE_NUMBER,
+				message: 'Invalid Thai Phone Number.'
+			},
+			data: null
+		}
 
-	if (!validVoucherCode) {
-		throw new ValidationError(INVALID_VOUCHER_CODE, 'Invalid Voucher Code.')
-	}
+	if (!validVoucherCode)
+		return {
+			status: {
+				code: INVALID_VOUCHER_CODE,
+				message: 'Invalid Voucher Code.'
+			},
+			data: null
+		}
 
 	const cacheKey = `${cleanedPhoneNumber}:${validVoucherCode}`
 	const cachedResponse = cache.get(cacheKey)
@@ -213,22 +220,19 @@ async function redeemVoucher({
 		const response = await makeApiRequest(url, body)
 		const apiResponse = await parseApiResponse(response)
 
-		// Cache successful responses only
-		if (apiResponse.status.code === 'SUCCESS') {
-			cache.set(cacheKey, {
-				data: apiResponse,
-				expiry: Date.now() + CACHE_TTL
-			})
-		}
+		const ttl =
+			apiResponse.status.code === 'SUCCESS'
+				? SUCCESS_CACHE_TTL
+				: ERROR_CACHE_TTL
+		cache.set(cacheKey, { data: apiResponse, expiry: Date.now() + ttl })
 		return apiResponse
 	} catch (error) {
-		if (error instanceof ValidationError) {
+		if (error instanceof ValidationError)
 			return {
 				status: { code: error.code, message: error.message },
 				data: null
-			} // RETURN, don't throw
-		}
-		if (error instanceof NetworkError) {
+			}
+		if (error instanceof NetworkError)
 			return {
 				status: {
 					code: error.code,
@@ -236,15 +240,13 @@ async function redeemVoucher({
 					error: error.cause
 				},
 				data: null
-			} // RETURN
-		}
-		if (error instanceof ApiError) {
+			}
+		if (error instanceof ApiError)
 			return {
 				status: { code: error.code, message: error.message },
 				data: null
-			} // RETURN
-		}
-		if (error instanceof JsonParseError) {
+			}
+		if (error instanceof JsonParseError)
 			return {
 				status: {
 					code: error.code,
@@ -252,8 +254,8 @@ async function redeemVoucher({
 					error: error.cause
 				},
 				data: null
-			} // RETURN
-		}
+			}
+
 		//should not happen, but for safety
 		throw new NetworkError(NETWORK_ERROR, 'Unexpected error') //keep throw for unexpected errors.
 	}
