@@ -49,6 +49,7 @@ interface ApiResponseSuccess {
 }
 
 interface ApiResponseError {
+	statusCode: number
 	status: {
 		code: string
 		message: string
@@ -79,6 +80,7 @@ async function redeemVoucher({
 	const cleanedPhoneNumber = phoneNumber.trim()
 	if (!isValidThaiPhoneNumber(cleanedPhoneNumber))
 		return {
+			statusCode: 400,
 			status: {
 				code: 'INVALID_PHONE_NUMBER',
 				message: 'Invalid Thai Phone Number.'
@@ -89,6 +91,7 @@ async function redeemVoucher({
 	const validVoucherCode = getValidVoucherCode(voucherCode)
 	if (!validVoucherCode)
 		return {
+			statusCode: 400,
 			status: {
 				code: 'INVALID_VOUCHER_CODE',
 				message: 'Invalid Voucher Code.'
@@ -117,6 +120,7 @@ async function redeemVoucher({
 					return errorData as ApiResponseError
 			} catch (parseError) {
 				return {
+					statusCode: response.status,
 					status: {
 						code: `HTTP_ERROR_${response.status}`,
 						message: `API request failed: ${response.statusText}`
@@ -125,6 +129,7 @@ async function redeemVoucher({
 				}
 			}
 			return {
+				statusCode: response.status,
 				status: {
 					code: `HTTP_ERROR_${response.status}`,
 					message: `API request failed: ${response.statusText}`
@@ -147,6 +152,7 @@ async function redeemVoucher({
 			else return data as ApiResponseError // Cast to the error type
 		} catch (jsonError) {
 			return {
+				statusCode: response.status,
 				status: {
 					code: 'INVALID_JSON_RESPONSE',
 					message: 'API returned invalid JSON',
@@ -157,6 +163,7 @@ async function redeemVoucher({
 		}
 	} catch (err) {
 		return {
+			statusCode: 500,
 			status: {
 				code: 'NETWORK_ERROR',
 				message: 'Network or API call failed',
