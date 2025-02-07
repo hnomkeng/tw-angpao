@@ -1,7 +1,7 @@
 {
     "name": "@pichxyaponn/tw-angpao",
     "description": "ระบบรับเงินจาก Truewallet (ซองอั่งเปา) ด้วย ElysiaJS",
-    "version": "1.0.5",
+    "version": "1.1.0",
     "author": {
         "name": "pichxyaponn",
         "url": "https://github.com/pichxyaponn",
@@ -41,12 +41,12 @@
     "license": "MIT",
     "devDependencies": {
         "@types/bun": "latest",
-        "@typescript-eslint/eslint-plugin": "^6.6.0",
-        "@typescript-eslint/parser": "^6.6.0",
-        "elysia": "^1.1.19",
+        "@typescript-eslint/eslint-plugin": "^6.21.0",
+        "@typescript-eslint/parser": "^6.21.0",
+        "elysia": "^1.2.12",
         "eslint": "9.6.0",
-        "tsup": "^8.1.0",
-        "typescript": "^5.0.0"
+        "tsup": "^8.3.6",
+        "typescript": "^5.7.3"
     },
     "peerDependencies": {
         "typescript": "^5.0.0"

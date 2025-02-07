@@ -16,7 +16,6 @@ import { Elysia, t } from 'elysia'
 import { TWAngpao } from '@pichxyaponn/tw-angpao'
 
 const app = new Elysia()
-const app = new Elysia()
 .use(TWAngpao('TWA'))
 .post('/redeem', async ({ body, TWA }) => {
     const response = await TWA.redeem(body.phoneNumber, body.voucherCode)

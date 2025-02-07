@@ -3,76 +3,180 @@
 import { Elysia, t } from 'elysia'
 
 export interface RedeemVoucher {
-    phoneNumber: string
-    voucherCode: string
+	phoneNumber: string
+	voucherCode: string
 }
 
-function isValidVoucherCode(voucherCode: string): boolean {
-    return /^[a-z0-9]*$/i.test(voucherCode) && voucherCode.length >= 4
+interface VoucherDetails {
+	voucher_id: string
+	amount_baht: string
+	redeemed_amount_baht: string
+	member: number
+	status: string
+	link: string
+	detail: string
+	expire_date: number
+	type: string
+	redeemed: number
+	available: number
 }
+
+interface Profile {
+	full_name?: string
+	mobile_number?: string
+}
+
+interface Ticket {
+	mobile: string
+	update_date: number
+	amount_baht: string
+	full_name: string
+	profile_pic: string | null
+}
+
+interface ApiResponseSuccess {
+	status: {
+		code: 'SUCCESS'
+		message: string
+		data: {
+			voucher: VoucherDetails
+			owner_profile: Profile
+			redeemer_profile: Profile
+			my_ticket: Ticket
+			tickets: Ticket[]
+		}
+	}
+}
+
+interface ApiResponseError {
+	status: {
+		code: string
+		message: string
+		error?: any // Optional error details
+	}
+	data?: null // Explicitly allow null data
+}
+
+type ApiResponse = ApiResponseSuccess | ApiResponseError
 
 function getValidVoucherCode(voucherCode: string): string {
-    const splitVoucherCode = (voucherCode + '').split('v=')
-    const matchedVoucher = (splitVoucherCode[1] || splitVoucherCode[0]).match(/[0-9A-Za-z]+/)
-    if (matchedVoucher && matchedVoucher.length > 0)
-        return matchedVoucher[0]
-        
-    return ''
+	const parts = (voucherCode + '').split('v=')
+	const codeToTest = parts[1] || parts[0]
+
+	const match = codeToTest.match(/[0-9A-Za-z]+/)
+	return match ? match[0] : ''
 }
 
+const thaiPhoneNumberRegex = /^(?:0)[689]\d{8}$/
 function isValidThaiPhoneNumber(phoneNumber: string): boolean {
-    const thaiPhoneNumberRegex = /^(?:0)[689]\d{8}$/
-    return thaiPhoneNumberRegex.test(phoneNumber) && phoneNumber.length == 10
+	return thaiPhoneNumberRegex.test(phoneNumber)
 }
 
-async function redeemVoucher({ phoneNumber, voucherCode }: RedeemVoucher) {
-    voucherCode = getValidVoucherCode(voucherCode)
-    if (!isValidVoucherCode(voucherCode)) {
-        return {
-            status: {
-                code: 'INVALID_VOUCHER_CODE',
-                message: 'Invalid Voucher Code.'
-            }
-        }
-    }
+async function redeemVoucher({
+	phoneNumber,
+	voucherCode
+}: RedeemVoucher): Promise<ApiResponse> {
+	const cleanedPhoneNumber = phoneNumber.trim()
+	if (!isValidThaiPhoneNumber(cleanedPhoneNumber))
+		return {
+			status: {
+				code: 'INVALID_PHONE_NUMBER',
+				message: 'Invalid Thai Phone Number.'
+			},
+			data: null
+		}
 
-    phoneNumber = phoneNumber.trim()
-    if (!isValidThaiPhoneNumber(phoneNumber)) {
-        return {
-            status: {
-                code: 'INVALID_PHONE_NUMBER',
-                message: 'Invalid Thai Phone Number.'
-            }
-        }
-    }
+	const validVoucherCode = getValidVoucherCode(voucherCode)
+	if (!validVoucherCode)
+		return {
+			status: {
+				code: 'INVALID_VOUCHER_CODE',
+				message: 'Invalid Voucher Code.'
+			},
+			data: null
+		}
 
-    try {
-        // Make API request to redeem voucher
-        const url = `https://gift.truemoney.com/campaign/vouchers/${voucherCode}/redeem`
-        const response = await fetch(url, {
-            method: "POST",
-            headers: {
-                "content-type": "application/json"
-            },
-            body: JSON.stringify({
-                mobile: phoneNumber,
-                voucher_hash: voucherCode
-            })
-        })
+	try {
+		// Make API request to redeem voucher
+		const url = `https://gift.truemoney.com/campaign/vouchers/${validVoucherCode}/redeem`
+		const response = await fetch(url, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json'
+			},
+			body: JSON.stringify({
+				mobile: cleanedPhoneNumber,
+				voucher_hash: validVoucherCode
+			})
+		})
 
-        const data: any = await response.json()
-        return data
-    } catch (err) {
-        return err
-    }
+		if (!response.ok) {
+			try {
+				const errorData = await response.json()
+				if (errorData && errorData.status && errorData.status.code)
+					return errorData as ApiResponseError
+			} catch (parseError) {
+				return {
+					status: {
+						code: `HTTP_ERROR_${response.status}`,
+						message: `API request failed: ${response.statusText}`
+					},
+					data: null
+				}
+			}
+			return {
+				status: {
+					code: `HTTP_ERROR_${response.status}`,
+					message: `API request failed: ${response.statusText}`
+				},
+				data: null
+			}
+		}
+
+		try {
+			const data: any = await response.json()
+
+			// Type guard to check
+			if (
+				data &&
+				data.status &&
+				data.status.code === 'SUCCESS' &&
+				data.status.data
+			)
+				return data as ApiResponseSuccess // Cast to the success type
+			else return data as ApiResponseError // Cast to the error type
+		} catch (jsonError) {
+			return {
+				status: {
+					code: 'INVALID_JSON_RESPONSE',
+					message: 'API returned invalid JSON',
+					error: jsonError
+				},
+				data: null
+			}
+		}
+	} catch (err) {
+		return {
+			status: {
+				code: 'NETWORK_ERROR',
+				message: 'Network or API call failed',
+				error: err
+			},
+			data: null
+		}
+	}
 }
 
-export const TWAngpao = <const Name extends string = 'TWA'>(name = 'TWA' as Name) => {
-    return new Elysia()
-    .decorate(name as Name extends string ? Name : 'TWA', {
-        async redeem(phoneNumber: string, voucherCode: string) {
-            return await redeemVoucher({phoneNumber, voucherCode} as RedeemVoucher)
-        }
-    })
+export const TWAngpao = <const Name extends string = 'TWA'>(
+	name = 'TWA' as Name
+) => {
+	return new Elysia().decorate(name as Name extends string ? Name : 'TWA', {
+		async redeem(phoneNumber: string, voucherCode: string) {
+			return await redeemVoucher({
+				phoneNumber,
+				voucherCode
+			} as RedeemVoucher)
+		}
+	})
 }
 export default TWAngpao
