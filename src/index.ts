@@ -1,4 +1,4 @@
-// src/index.ts (Modified)
+// src/index.ts
 import { Elysia } from 'elysia'
 import { Type as t } from '@sinclair/typebox'
 import { TypeCompiler } from '@sinclair/typebox/compiler'
@@ -10,6 +10,8 @@ const INVALID_VOUCHER_CODE = 'INVALID_VOUCHER_CODE'
 const HTTP_ERROR_PREFIX = 'HTTP_ERROR_'
 const INVALID_JSON_RESPONSE = 'INVALID_JSON_RESPONSE'
 const NETWORK_ERROR = 'NETWORK_ERROR'
+
+// --- Type Aliases ---
 
 // --- Types ---
 const shape = t.Object({
@@ -136,7 +138,6 @@ async function makeApiRequest(
 ): Promise<Response> {
 	const guard = TypeCompiler.Compile(shape)
 	const encode = createAccelerator(shape)
-
 	const response = await fetch(url, {
 		method: 'POST',
 		headers: {
@@ -155,9 +156,7 @@ async function parseApiResponse(response: Response): Promise<ApiResponse> {
 			if (errorData && errorData.status && errorData.status.code) {
 				return errorData as ApiResponseError
 			}
-		} catch (parseError) {
-			//ignore since it will throw a new error.
-		}
+		} catch (parseError) {}
 		throw new ApiError(
 			`${HTTP_ERROR_PREFIX}${response.status}`,
 			`API request failed: ${response.statusText}`
@@ -165,16 +164,18 @@ async function parseApiResponse(response: Response): Promise<ApiResponse> {
 	}
 
 	try {
-		const data: any = await response.json() //Still any, for the guard
-		if (data?.status?.code === 'SUCCESS' && data?.status?.data) {
+		const data: any = await response.json()
+		if (data?.status?.code === 'SUCCESS' && data?.status?.data)
 			return data as ApiResponseSuccess
-		} else {
-			return data as ApiResponseError
-		}
+		else return data as ApiResponseError
 	} catch (jsonError) {
 		throw new JsonParseError('API returned invalid JSON', jsonError)
 	}
 }
+
+// --- Cache Setup ---
+const cache = new Map<string, { data: ApiResponse; expiry: number }>()
+const CACHE_TTL = 1000 * 60 * 60 * 24 // 60 seconds (adjust as needed)
 
 // --- Main redeemVoucher Function ---
 async function redeemVoucher({
@@ -195,6 +196,13 @@ async function redeemVoucher({
 		throw new ValidationError(INVALID_VOUCHER_CODE, 'Invalid Voucher Code.')
 	}
 
+	const cacheKey = `${cleanedPhoneNumber}:${validVoucherCode}`
+	const cachedResponse = cache.get(cacheKey)
+
+	if (cachedResponse && cachedResponse.expiry > Date.now()) {
+		return cachedResponse.data // Return cached data
+	}
+
 	const url = `https://gift.truemoney.com/campaign/vouchers/${validVoucherCode}/redeem`
 	const body = {
 		mobile: cleanedPhoneNumber,
@@ -203,7 +211,16 @@ async function redeemVoucher({
 
 	try {
 		const response = await makeApiRequest(url, body)
-		return parseApiResponse(response)
+		const apiResponse = await parseApiResponse(response)
+
+		// Cache successful responses only
+		if (apiResponse.status.code === 'SUCCESS') {
+			cache.set(cacheKey, {
+				data: apiResponse,
+				expiry: Date.now() + CACHE_TTL
+			})
+		}
+		return apiResponse
 	} catch (error) {
 		if (error instanceof ValidationError) {
 			return {
