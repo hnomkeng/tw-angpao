@@ -50,5 +50,9 @@
     },
     "peerDependencies": {
         "typescript": "^5.0.0"
+    },
+    "dependencies": {
+        "@sinclair/typebox": "^0.34.16",
+        "json-accelerator": "^0.0.2"
     }
 }

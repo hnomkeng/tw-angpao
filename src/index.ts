@@ -1,6 +1,14 @@
 // src/index.ts
 
-import { Elysia, t } from 'elysia'
+import { Elysia } from 'elysia'
+import { Type as t } from '@sinclair/typebox'
+import { TypeCompiler } from '@sinclair/typebox/compiler'
+import { createAccelerator } from 'json-accelerator'
+
+const shape = t.Object({
+	mobile: t.String(),
+	voucher_hash: t.String()
+})
 
 export interface RedeemVoucher {
 	phoneNumber: string
@@ -102,15 +110,21 @@ async function redeemVoucher({
 	try {
 		// Make API request to redeem voucher
 		const url = `https://gift.truemoney.com/campaign/vouchers/${validVoucherCode}/redeem`
+
+		const body = {
+			mobile: cleanedPhoneNumber,
+			voucher_hash: validVoucherCode
+		} satisfies typeof shape.static
+
+		const guard = TypeCompiler.Compile(shape)
+		const encode = createAccelerator(shape)
+
 		const response = await fetch(url, {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json'
 			},
-			body: JSON.stringify({
-				mobile: cleanedPhoneNumber,
-				voucher_hash: validVoucherCode
-			})
+			body: guard.Check(body) ? encode(body) : JSON.stringify(body)
 		})
 
 		if (!response.ok) {
