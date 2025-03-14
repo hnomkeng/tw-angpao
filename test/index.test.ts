@@ -123,7 +123,7 @@ describe('TW Angpao Plugin', () => {
 			new Response('invalid json', { status: 200 })
 		)
 
-		const phoneNumber = '0641349437'
+		const phoneNumber = 'VALID_PHONENUMBER'
 		const voucherCode = 'VALID_CODE'
 
 		const response = await app.handle(
