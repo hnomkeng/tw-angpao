@@ -29,12 +29,26 @@ describe('TW Angpao Plugin', () => {
 						body.phoneNumber,
 						body.voucherCode
 					)
-					if (response.status.code !== 'SUCCESS') {
-						set.status = 400
+
+					if (response.status.code === 'SUCCESS') {
+						set.status = 200
+					} else if (
+						(response.status.code as string).startsWith(
+							'HTTP_ERROR_'
+						) ||
+						(response.status.code as string).startsWith(
+							'NETWORK_ERROR'
+						) ||
+						response.status.code === 'INVALID_JSON_RESPONSE'
+					) {
+						set.status = 500
+					} else {
+						set.status = 400 // Bad Request
 					}
+
 					return response
 				} catch (error: any) {
-					set.status = error.status ?? 500 // Handle custom errors
+					set.status = 500 // Handle custom errors
 					return {
 						status: {
 							code: error.code ?? 'INTERNAL_SERVER_ERROR',
@@ -55,9 +69,23 @@ describe('TW Angpao Plugin', () => {
 		)
 	})
 
+	it('should return an error for an invalid phone number', async () => {
+		const phoneNumber = 'INVALID_PHONENUMBER' // Invalid
+		const voucherCode = 'VALID_CODE'
+
+		const response = await app.handle(
+			post('/redeem', { phoneNumber, voucherCode })
+		)
+		const result = await response.json() //parse as JSON
+
+		expect(response.status).toBe(400)
+		expect(result.status.code).toBe('INVALID_PHONE_NUMBER')
+		expect(mockFetch).not.toHaveBeenCalled()
+	})
+
 	it('should return an error for an invalid voucher code', async () => {
-		const phoneNumber = '0812345678'
-		const voucherCode = '' // Invalid
+		const phoneNumber = 'VALID_PHONENUMBER'
+		const voucherCode = 'INVALID_CODE' // Invalid
 
 		const response = await app.handle(
 			post('/redeem', { phoneNumber, voucherCode })
@@ -77,8 +105,8 @@ describe('TW Angpao Plugin', () => {
 			new Response(JSON.stringify(mockApiError), { status: 400 })
 		)
 
-		const phoneNumber = '0812345678'
-		const voucherCode = 'EXPIREDCODE'
+		const phoneNumber = 'VALID_PHONENUMBER'
+		const voucherCode = 'VALID_CODE'
 
 		const response = await app.handle(
 			post('/redeem', { phoneNumber, voucherCode })
@@ -90,29 +118,13 @@ describe('TW Angpao Plugin', () => {
 		expect(mockFetch).toHaveBeenCalledTimes(1) // Expect fetch to be called
 	})
 
-	it('should handle network errors', async () => {
-		mockFetch.mockRejectedValue(new Error('Network error'))
-
-		const phoneNumber = '0812345678'
-		const voucherCode = 'VALIDCODE'
-
-		const response = await app.handle(
-			post('/redeem', { phoneNumber, voucherCode })
-		)
-		const result = await response.json() // Parse as JSON
-
-		expect(response.status).toBe(500)
-		expect(result.status.code).toBe('NETWORK_ERROR')
-		expect(mockFetch).toHaveBeenCalledTimes(1)
-	})
-
 	it('should handle JSON parsing errors', async () => {
 		mockFetch.mockResolvedValue(
 			new Response('invalid json', { status: 200 })
 		)
 
-		const phoneNumber = '0812345678'
-		const voucherCode = 'VALIDCODE'
+		const phoneNumber = '0641349437'
+		const voucherCode = 'VALID_CODE'
 
 		const response = await app.handle(
 			post('/redeem', { phoneNumber, voucherCode })

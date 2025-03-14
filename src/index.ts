@@ -74,26 +74,33 @@ interface ApiResponseError {
 	data?: null
 }
 
-type ApiResponse = ApiResponseSuccess | ApiResponseError
+type ApiResponse = Readonly<ApiResponseSuccess> | Readonly<ApiResponseError>
 
 // --- Validation Functions ---
-function getValidVoucherCode(voucherCode: string): string {
-	const parts = voucherCode.split('v=')
+function getValidVoucherCode(voucherCode: Readonly<string>): string {
+	const parts = voucherCode.split('?v=')
 	const codeToTest = parts[1] || parts[0]
 
 	const match = codeToTest.match(/[0-9A-Za-z]+/)
 	return match ? match[0] : ''
 }
 
-const thaiPhoneNumberRegex = /^(?:0)[689]\d{8}$/
-function isValidThaiPhoneNumber(phoneNumber: string): boolean {
-	return thaiPhoneNumberRegex.test(phoneNumber)
+const thaiPhoneNumberRegex = /^0[689]\d{8}$/
+function isValidThaiPhoneNumber(phoneNumber: Readonly<string>): boolean {
+	const cleanedNumber = phoneNumber.replace(/[^\d]/g, '')
+
+	// Check if the number starts with '66' (thai code)
+	if (cleanedNumber.startsWith('66') && cleanedNumber.length === 11) {
+		return thaiPhoneNumberRegex.test('0' + cleanedNumber.substring(2))
+	}
+
+	return thaiPhoneNumberRegex.test(cleanedNumber)
 }
 
 // --- Custom Error Classes ---
 class ValidationError extends Error {
 	code: string
-	constructor(code: string, message: string) {
+	constructor(code: Readonly<string>, message: Readonly<string>) {
 		super(message)
 		this.code = code
 		this.name = 'ValidationError'
@@ -102,7 +109,7 @@ class ValidationError extends Error {
 
 class NetworkError extends Error {
 	code: string
-	constructor(code: string, message: string) {
+	constructor(code: Readonly<string>, message: Readonly<string>) {
 		super(message)
 		this.code = code
 		this.name = 'NetworkError'
@@ -111,7 +118,7 @@ class NetworkError extends Error {
 
 class ApiError extends Error {
 	code: string
-	constructor(code: string, message: string) {
+	constructor(code: Readonly<string>, message: Readonly<string>) {
 		super(message)
 		this.code = code
 		this.name = 'ApiError'
@@ -119,7 +126,7 @@ class ApiError extends Error {
 }
 class JsonParseError extends Error {
 	code: string
-	constructor(message: string, originalError: any) {
+	constructor(message: Readonly<string>, originalError: any) {
 		super(message)
 		this.code = INVALID_JSON_RESPONSE
 		this.name = 'JsonParseError'
@@ -129,11 +136,11 @@ class JsonParseError extends Error {
 
 // --- API Request Function ---
 async function makeApiRequest(
-	url: string,
-	body: {
+	url: Readonly<string>,
+	body: Readonly<{
 		mobile: string
 		voucher_hash: string
-	}
+	}>
 ): Promise<Response> {
 	const guard = TypeCompiler.Compile(shape)
 	const encode = createAccelerator(shape)
@@ -148,22 +155,24 @@ async function makeApiRequest(
 }
 
 // --- Response Parse Function ---
-async function parseApiResponse(response: Response): Promise<ApiResponse> {
-	if (!response.ok) {
+async function parseApiResponse(
+	response: Readonly<Response>
+): Promise<ApiResponse> {
+	if (!response?.ok) {
 		try {
-			const errorData = await response.json()
+			const errorData = await response?.json()
 			if (errorData && errorData.status && errorData.status.code) {
 				return errorData as ApiResponseError
 			}
 		} catch (parseError) {}
 		throw new ApiError(
-			`${HTTP_ERROR_PREFIX}${response.status}`,
-			`API request failed: ${response.statusText}`
+			`${HTTP_ERROR_PREFIX}${response?.ok ? 'OK' : 'UNKNOWN'}`,
+			`API request failed: ${response?.statusText || 'Unknown'}`
 		)
 	}
 
 	try {
-		const data: any = await response.json()
+		const data: any = await response?.json()
 		if (data?.status?.code === 'SUCCESS' && data?.status?.data)
 			return data as ApiResponseSuccess
 		else return data as ApiResponseError
@@ -173,17 +182,20 @@ async function parseApiResponse(response: Response): Promise<ApiResponse> {
 }
 
 // --- Cache Setup ---
-const cache = new Map<string, { data: ApiResponse; expiry: number }>()
-const SUCCESS_CACHE_TTL = 1000 * 60 * 60 * 24 // 60 seconds (adjust as needed)
+const cache = new Map<
+	string,
+	{ readonly data: ApiResponse; readonly expiry: number }
+>()
+const SUCCESS_CACHE_TTL = 1000 * 60 * 60 * 24 // 24 hours (adjust as needed)
 const ERROR_CACHE_TTL = 1000 * 60 * 5 // 5 minutes for error responses
 
 // --- Main redeemVoucher Function ---
 async function redeemVoucher({
 	phoneNumber,
 	voucherCode
-}: RedeemVoucher): Promise<ApiResponse> {
-	const cleanedPhoneNumber = phoneNumber.trim()
-	const validVoucherCode = getValidVoucherCode(voucherCode)
+}: Readonly<RedeemVoucher>): Promise<ApiResponse> {
+	const cleanedPhoneNumber = phoneNumber?.trim() || ''
+	const validVoucherCode = voucherCode ? getValidVoucherCode(voucherCode) : ''
 
 	if (!isValidThaiPhoneNumber(cleanedPhoneNumber))
 		return {
@@ -227,26 +239,13 @@ async function redeemVoucher({
 		cache.set(cacheKey, { data: apiResponse, expiry: Date.now() + ttl })
 		return apiResponse
 	} catch (error) {
-		if (error instanceof ValidationError)
+		if (error instanceof ValidationError || error instanceof ApiError)
 			return {
 				status: { code: error.code, message: error.message },
 				data: null
 			}
-		if (error instanceof NetworkError)
-			return {
-				status: {
-					code: error.code,
-					message: error.message,
-					error: error.cause
-				},
-				data: null
-			}
-		if (error instanceof ApiError)
-			return {
-				status: { code: error.code, message: error.message },
-				data: null
-			}
-		if (error instanceof JsonParseError)
+
+		if (error instanceof NetworkError || error instanceof JsonParseError)
 			return {
 				status: {
 					code: error.code,
@@ -256,8 +255,13 @@ async function redeemVoucher({
 				data: null
 			}
 
-		//should not happen, but for safety
-		throw new NetworkError(NETWORK_ERROR, 'Unexpected error') //keep throw for unexpected errors.
+		// Handle unexpected errors
+		// should not happen, but for safety
+		console.error('Unexpected error in redeemVoucher:', error)
+		throw new NetworkError(
+			NETWORK_ERROR,
+			error instanceof Error ? error.message : 'Unexpected error'
+		)
 	}
 }
 
