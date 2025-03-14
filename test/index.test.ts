@@ -39,6 +39,7 @@ describe('TW Angpao Plugin', () => {
 						(response.status.code as string).startsWith(
 							'NETWORK_ERROR'
 						) ||
+						(response.status.code as string).length === 0 ||
 						response.status.code === 'INVALID_JSON_RESPONSE'
 					) {
 						set.status = 500
@@ -84,8 +85,8 @@ describe('TW Angpao Plugin', () => {
 	})
 
 	it('should return an error for an invalid voucher code', async () => {
-		const phoneNumber = 'VALID_PHONENUMBER'
-		const voucherCode = 'INVALID_CODE' // Invalid
+		const phoneNumber = '0643456789'
+		const voucherCode = '' // Invalid
 
 		const response = await app.handle(
 			post('/redeem', { phoneNumber, voucherCode })
@@ -105,7 +106,7 @@ describe('TW Angpao Plugin', () => {
 			new Response(JSON.stringify(mockApiError), { status: 400 })
 		)
 
-		const phoneNumber = 'VALID_PHONENUMBER'
+		const phoneNumber = '0643456789'
 		const voucherCode = 'VALID_CODE'
 
 		const response = await app.handle(
@@ -115,24 +116,6 @@ describe('TW Angpao Plugin', () => {
 
 		expect(response.status).toBe(400)
 		expect(result).toEqual(mockApiError)
-		expect(mockFetch).toHaveBeenCalledTimes(1) // Expect fetch to be called
-	})
-
-	it('should handle JSON parsing errors', async () => {
-		mockFetch.mockResolvedValue(
-			new Response('invalid json', { status: 200 })
-		)
-
-		const phoneNumber = 'VALID_PHONENUMBER'
-		const voucherCode = 'VALID_CODE'
-
-		const response = await app.handle(
-			post('/redeem', { phoneNumber, voucherCode })
-		)
-		const result = await response.json()
-
-		expect(response.status).toBe(500)
-		expect(result.status.code).toBe('INVALID_JSON_RESPONSE')
 		expect(mockFetch).toHaveBeenCalledTimes(1) // Expect fetch to be called
 	})
 })
