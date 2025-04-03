@@ -161,7 +161,7 @@ async function parseApiResponse(
 	if (!response?.ok) {
 		try {
 			const errorData = await response?.json()
-			if (errorData && errorData.status && errorData.status.code) {
+			if (errorData) {
 				return errorData as ApiResponseError
 			}
 		} catch (parseError) {}
