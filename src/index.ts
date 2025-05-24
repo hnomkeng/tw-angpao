@@ -1,6 +1,6 @@
 // src/index.ts
 import { Elysia } from 'elysia'
-import { shape, type ApiResponse, type RedeemVoucher } from './type'
+import { shape, type ApiResponse, type RedeemVoucher } from './type.d'
 import {
 	ApiError,
 	JsonParseError,
