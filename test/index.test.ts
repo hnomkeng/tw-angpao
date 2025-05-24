@@ -1,11 +1,11 @@
-// test/index.test.ts (Modified - Option 1)
+// test/index.test.ts
 import { Elysia, t } from 'elysia'
-import { TWAngpao } from '../src' // Assuming your main file is index.ts
+import { TWAngpao } from '../src'
 import { describe, expect, it, beforeEach, mock } from 'bun:test'
 
 // --- Mock fetch ---
 const mockFetch = mock(globalThis.fetch)
-globalThis.fetch = mockFetch
+globalThis.fetch = Object.assign(mockFetch, { preconnect: () => {} })
 
 const post = (path: string, body = {}) =>
 	new Request(`http://localhost${path}`, {
