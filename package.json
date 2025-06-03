@@ -1,7 +1,7 @@
 {
   "name": "@pichxyaponn/tw-angpao",
   "description": "ระบบรับเงินจาก Truewallet (ซองอั่งเปา) ด้วย ElysiaJS",
-  "version": "1.9.2",
+  "version": "1.9.3",
   "author": {
     "name": "pichxyaponn",
     "url": "https://github.com/pichxyaponn",
@@ -36,7 +36,8 @@
     "truemoney",
     "angpao",
     "voucher",
-    "envelope"
+    "envelope",
+    "gift"
   ],
   "license": "MIT",
   "devDependencies": {
@@ -45,11 +46,10 @@
     "@typescript-eslint/parser": "^8.33.1",
     "elysia": "^1.3.4",
     "eslint": "^9.28.0",
-    "tsup": "^8.5.0",
-    "typescript": "^5.8.3"
+    "tsup": "^8.5.0"
   },
   "peerDependencies": {
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.3"
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.33",
