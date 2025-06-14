@@ -1,6 +1,6 @@
 // src/type.d.ts
 
-import { t } from "elysia";
+import { Type as t } from "@sinclair/typebox";
 
 export interface RedeemVoucher {
   phoneNumber: string;
