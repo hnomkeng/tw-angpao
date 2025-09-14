@@ -12,7 +12,6 @@ import {
 
 // --- Cache Setup ---
 const cache = new Map<string, { readonly data: ApiResponse; readonly expiry: number }>();
-const SUCCESS_CACHE_TTL = 1000 * 60 * 60 * 24; // 24 hours (adjust as needed)
 const ERROR_CACHE_TTL = 1000 * 60 * 5; // 5 minutes for error responses
 
 // --- Main redeemVoucher Function ---
@@ -58,8 +57,9 @@ async function redeemVoucher({
     const response = await makeApiRequest(url, body);
     const apiResponse = await parseApiResponse(response);
 
-    const ttl = apiResponse.status.code === "SUCCESS" ? SUCCESS_CACHE_TTL : ERROR_CACHE_TTL;
-    cache.set(cacheKey, { data: apiResponse, expiry: Date.now() + ttl });
+    if (apiResponse.status.code !== "SUCCESS") {
+      cache.set(cacheKey, { data: apiResponse, expiry: Date.now() + ERROR_CACHE_TTL });
+    }
     return apiResponse;
   } catch (error) {
     if (error instanceof ValidationError || error instanceof ApiError)
