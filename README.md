@@ -117,6 +117,7 @@ host:port/redeem
 | code                   | message                            |
 | ---------------------- | ---------------------------------- |
 | VOUCHER_OUT_OF_STOCK   | Voucher ticket is out of stock.    |
+| TARGET_USER_REDEEMED   | Redeemed                           |
 | VOUCHER_NOT_FOUND      | Voucher doesn't exist.             |
 | CANNOT_GET_OWN_VOUCHER | Cannot claim your own voucher.     |
 | VOUCHER_EXPIRED        | The gift voucher link has expired. |
